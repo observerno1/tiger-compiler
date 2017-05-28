@@ -28,13 +28,16 @@ static int streq(string a, string b)
  return !strcmp(a,b);
 }
 
+// 这张符号表应该是保存了程序中出现过的所有符号，每次寻找的时候，如果变量已经出现过了，那么返回变量所映射的符号地址
+// 因此即使当一个环境结束之后也不用该符号从符号表中弹出
+// 
 S_symbol S_Symbol(string name)
 {int index= hash(name) % SIZE;
  S_symbol syms = hashtable[index], sym;
  for(sym=syms; sym; sym=sym->next)
    if (streq(sym->name,name)) return sym;
- sym = mksymbol(name,syms);
- hashtable[index]=sym;
+ sym = mksymbol(name,syms);    
+ hashtable[index]=sym;       
  return sym;
 }
  
@@ -63,7 +66,8 @@ void S_beginScope(S_table t)
 }
 
 void S_endScope(S_table t)
-{S_symbol s;
+{
+  S_symbol s;
   do s=TAB_pop(t);
   while (s != &marksym);
 }
