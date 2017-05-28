@@ -8,7 +8,7 @@
 
 #include "table.h"
 
-typedef struct S_symbol_ *S_symbol;
+typedef struct S_symbol_*   S_symbol;
 
 /* Make a unique symbol from a given string.  
  *  Different calls to S_Symbol("foo") will yield the same S_symbol

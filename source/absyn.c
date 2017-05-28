@@ -9,6 +9,7 @@
 
 A_var A_SimpleVar(A_pos pos, S_symbol sym)
 {
+    //还有这种操作？厉害了我的编译器
     A_var p = checked_malloc(sizeof(*p));
     p->kind=A_simpleVar;
     p->pos=pos;
