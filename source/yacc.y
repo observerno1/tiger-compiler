@@ -4,16 +4,43 @@
 #include "errormsg.h"
 #include "absyn.h"
 #include "symbol.h" 
+#include "type.h"
 
 int yylex(void); 
-
 void yyerror(char *s)
 {
     EM_error(EM_tokPos, "%s", s);
 }
-
 A_exp absyn_root;
-
+/*y以下分别为值环境表和类型环境表*/
+S_table TotalValEnvi = NULL;
+S_table TotalTypeEnvi = NULL;
+/*we need a table link to remember the current environment and the past*/
+/* 理解错了，其实一张S_table就可以实现环境的嵌套了
+typedef struct Symbol_link_ *TableLink;
+struct Symbol_link_ {S_table current, TableLink previous};
+TableLink Envi = NULL;
+void beginNewEnvi()
+{
+     if(!Envi)  //当变量环境还是空的时候，初始化
+    {
+        Envi = checked_malloc(sizeof(struct Symbol_link_));
+        Envi->previous = NULL;
+    }
+    else //当环境链表早已存在的时候
+    {
+        TableLink temp = checked_malloc(sizeof(struct Symbol_link_));
+        temp->previous = Envi;
+        Envi = temp;
+    }
+    Envi->current = S_empty();
+    S_beginScope(Envi->current);
+}
+void EndEnvi()
+{
+    S_endScope(Envi->current);
+    Envi = Envi->previous;  
+} */
 %}
 
 %union {
@@ -92,26 +119,43 @@ A_exp absyn_root;
 
 %%
 
-program : exp                           {absyn_root = $1;}
+program : exp                           {
+                                         TotalTypeEnvi = S_empty(); /*nitialize an empty table*/
+                                         TotalValEnvi = S_empty(); 
+                                         /*we first construct the basic map from int to Ty_int and string to Ty_string*/
+                                         Ty_ty intType= checked_malloc(sizeof(struct Ty_ty_));
+                                         Ty_ty stringType = checked_malloc(sizeof(struct Ty_ty_));
+                                         S_symbol s1 = S_Symbol("int");
+                                         S_symbol s2 = S_Symbol("string");
+                                         S_beginScope(TotalTypeEnvi);
+                                         S_enter(TotalTypeEnvi,s1,intType);
+                                         S_enter(TotalTypeEnvi,s2,stringType);
+                                         absyn_root = $1;
+                                         S_endScope(TotalTypeEnvi);
+                                        }
         ;
 
 decs    : dec decs                      {$$ = A_DecList($1, $2);}
         |                               {$$ = NULL;}
         ;
-
-dec     : tydecs                        {$$ = A_TypeDec(EM_tokPos, $1);}
+                                                /*the position of token */
+dec     : tydecs                        {$$ = A_TypeDec(EM_tokPos, $1);} 
         | vardec                        {$$ = $1;}
         | fundecs                       {$$ = A_FunctionDec(EM_tokPos, $1);}
         ;
 
-tydec   : TYPE ID EQ ty                 {$$ = A_Namety(S_Symbol($2), $4);}
+tydec   : TYPE ID EQ ty                 {
+                                      
+                                        $$ = A_Namety(S_Symbol($2), $4);
+                                        }
         ;
 
 tydecs  : tydec                         {$$ = A_NametyList($1, NULL);}
         | tydec tydecs                  {$$ = A_NametyList($1, $2);}
         ;
 
-ty      : ID                            {$$ = A_NameTy(EM_tokPos, S_Symbol($1));}
+ty      : ID                            { 
+                                        $$ = A_NameTy(EM_tokPos, S_Symbol($1));}
         | LBRACE tyfields RBRACE        {$$ = A_NameTy(EM_tokPos, S_Symbol($1));}
         | ARRAY OF ID                   {$$ = A_ArrayTy(EM_tokPos, S_Symbol($3));}
         ;
@@ -184,8 +228,16 @@ exp : lvalue                            {$$ = A_VarExp(EM_tokPos, $1);}
 
     | BREAK                             {$$ = A_BreakExp(EM_tokPos);}
 
-    | LET decs IN END                   {$$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, NULL));}
-    | LET decs IN expseq END            {$$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, $4));}
+    | LET decs IN END                   {
+                                            S_beginScope(TotalEnvi);
+                                            $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, NULL));
+                                            S_endScope(TotalEnvi);
+                                        }
+    | LET decs IN expseq END            {  
+                                            S_beginScope(TotalEnvi);
+                                            $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, $4));
+                                            S_endScope(TotalEnvi);
+                                        }
     ;
 
 expseq  : exp                           {$$ = A_ExpList($1, NULL);}
