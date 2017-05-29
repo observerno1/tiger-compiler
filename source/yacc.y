@@ -41,6 +41,62 @@ void EndEnvi()
     S_endScope(Envi->current);
     Envi = Envi->previous;  
 } */
+//根据名字递归找到最底
+Ty_ty FindBasisType(S_symbol name)
+{
+     Ty_ty temp = (Ty_ty)S_look(TotalTypeEnvi,name);
+     while(temp->kind == temp->Ty_name)
+     {
+        temp = (Ty_ty)S_look(TotalTypeEnvi,temp->name.sym);
+     }
+     // 当是Ty_record Ty_int Ty_string Ty_array的时候返回
+     return temp;
+}
+void expandTypeEnvi(S_symbol s1,A_ty ty)
+{
+    if(!s1 || !ty)
+    {
+        yyerror("error happen when expanding type environment,null pointer!\n");
+        return;
+    }
+    switch(ty->kind)
+    {
+        case 0:
+            // A_nameTy, we just find it int the environment
+            S_symbol s2 = ty->u.name;
+            // 返回值
+            Ty_ty temp = FindBasisType(s2);
+            // 不是基本类型，应该递归到基本类型，int string 或者array of type id，或者record类型
+            S_enter(TotalTypeEnvi,s1,Ty_Name(s1,temp));
+            break;
+        case 1:
+            // A_recordTy,
+            A_fieldList tmpList = s2->u.record;
+            if(tmpList == NULL) // 空的域
+            {
+                S_enter(TotalTypeEnvi,s1,Ty_Record(NULL)); 
+            }
+            else{
+                // 域非空，需要每一个类型都递归到基类型
+                // type a = {a1: type1, a2: type2, a3:type3, a4: a};
+                // 需要注意的是首先域内各个名字不能一样，其次
+            }
+        case 2:
+              // array of Type id, 递归到int或者string为止
+              S_symbol s2 = ty->u.array;
+              // 追溯到这是一个int或者
+              Ty_ty temp = FindBasisType(s2); 
+            // 找到最初的类型变量，ru type c = {}, type d = c,  type e = array of d,
+            // 那么符号表绑定 s1, Ty_ty{d}              
+            S_enter(TotalTypeEnvi,s1,Ty_Array(temp));
+        default:
+        /*not any one of the three kinds before, error happens*/
+        yyerror("error happen when expanding type environment, type kind unexpected %d\n",ty->kind);
+        break;
+    }
+    return;
+}
+
 %}
 
 %union {
@@ -123,15 +179,13 @@ program : exp                           {
                                          TotalTypeEnvi = S_empty(); /*nitialize an empty table*/
                                          TotalValEnvi = S_empty(); 
                                          /*we first construct the basic map from int to Ty_int and string to Ty_string*/
-                                         Ty_ty intType= checked_malloc(sizeof(struct Ty_ty_));
-                                         Ty_ty stringType = checked_malloc(sizeof(struct Ty_ty_));
+                                         Ty_ty intType= Ty_int();
+                                         Ty_ty stringType = Ty_String();
                                          S_symbol s1 = S_Symbol("int");
                                          S_symbol s2 = S_Symbol("string");
-                                         S_beginScope(TotalTypeEnvi);
                                          S_enter(TotalTypeEnvi,s1,intType);
                                          S_enter(TotalTypeEnvi,s2,stringType);
                                          absyn_root = $1;
-                                         S_endScope(TotalTypeEnvi);
                                         }
         ;
 
@@ -145,9 +199,15 @@ dec     : tydecs                        {$$ = A_TypeDec(EM_tokPos, $1);}
         ;
 
 tydec   : TYPE ID EQ ty                 {
-                                      
-                                        $$ = A_Namety(S_Symbol($2), $4);
-                                        }
+                                        S_symbol temp = S_Symbol($2);
+                                        // Ty可能是一个类型ID，或者一个tyfields 或者 array of 
+                                        A_Namety temp = A_Namety(S_Symbol($2), $4);
+                                        $$ = temp;
+                                        /*扩充类型表，应该是递归的扩充*/
+                                        A_ty ty = temp->ty;
+                                        /*根据节点的类型来扩建*/
+                                        expandTypeEnvi(temp,ty);
+                                        }    
         ;
 
 tydecs  : tydec                         {$$ = A_NametyList($1, NULL);}
@@ -155,8 +215,10 @@ tydecs  : tydec                         {$$ = A_NametyList($1, NULL);}
         ;
 
 ty      : ID                            { 
+                                        /*construct an A_ty with symbol name and kind as well as position*/
+
                                         $$ = A_NameTy(EM_tokPos, S_Symbol($1));}
-        | LBRACE tyfields RBRACE        {$$ = A_NameTy(EM_tokPos, S_Symbol($1));}
+        | LBRACE tyfields RBRACE        {$$ = A_RecordTy(EM_tokPos, $2);}
         | ARRAY OF ID                   {$$ = A_ArrayTy(EM_tokPos, S_Symbol($3));}
         ;
 
