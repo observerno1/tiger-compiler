@@ -173,7 +173,7 @@ struct A_ty_ {
     union {
         S_symbol name;          //ty -> ID 中的ID（新类型名）
         A_fieldList record;     //ty -> {tyfields} 中的tyfields
-        S_symbol array;         //数组名ID
+        S_symbol array;         //数组类型ID
     } u;
 };
 
