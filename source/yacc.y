@@ -12,9 +12,16 @@ void yyerror(char *s)
     EM_error(EM_tokPos, "%s", s);
 }
 A_exp absyn_root;
+bool Is 
 /*y以下分别为值环境表和类型环境表*/
 S_table TotalValEnvi = NULL;
 S_table TotalTypeEnvi = NULL;
+typedef struct Null_A_nametyList *NullTypeList;
+struct Null_A_nametyList { 
+    A_namety node, 
+    NullTypeList next;
+};
+NullTypeList WaitTypeList =  NULL;
 /*we need a table link to remember the current environment and the past*/
 /* 理解错了，其实一张S_table就可以实现环境的嵌套了
 typedef struct Symbol_link_ *TableLink;
@@ -41,58 +48,213 @@ void EndEnvi()
     S_endScope(Envi->current);
     Envi = Envi->previous;  
 } */
+// 如果一个变量声明类型尚未找到，可能是在后续中，还没出现，加入待补充队列中
+void addItem(A_namety item)
+{
+    NullTypeList tail = (NullTypeList)checked_malloc(sizeof(*WaitTypeList));
+    tail->next = NULL;
+    if(WaitTypeList == NULL)
+    {
+        WaitTypeList = tail;
+    }
+    else
+    {
+        NullTypeList temp;
+        temp = NullTypeList;
+        while(temp!=NULL && temp->next)
+        {
+            temp = temp->next;
+        }
+        temp->next = tail;
+    }
+}
+// 一旦连续的声明结束之后，执行清理操作
+void clearItem()
+{
+    NullTypeList temp = WaitTypeList;
+    while(temp!=NULL)
+    {
+        temp = WaitTypeList->next;
+        free(WaitTypeList);
+        WaitTypeList = temp;
+    }
+}
+// 链表开头最好还是放一个 哑节点 但这里没有
+void removeOneItem(A_namety item)
+{
+    if(WaitTypeList == NULL)
+        return;
+    NullTypeList tmp1 = WaitTypeList;
+    NullTypeList tmp2 = WaitTypeList;
+    if(WaitTypeList->node == item)
+    {
+        WaitTypeList = WaitTypeList->next;
+        free(tmp1);
+        return;
+    }
+    whle(tmp1 != NULL){
+        tmp2 = tmp1->next;
+        if(tmp2 != NULL && tmp2->node == item)
+        {
+            tmp->next = tmp2->next;
+            free(tmp2);
+            break;
+        }
+        tmp1 = tmp2;
+    }
+}
 //根据名字递归找到最底
 Ty_ty FindBasisType(S_symbol name)
 {
      Ty_ty temp = (Ty_ty)S_look(TotalTypeEnvi,name);
-     while(temp->kind == temp->Ty_name)
+     while(temp != NULL && temp->kind == temp->Ty_name)
      {
-        temp = (Ty_ty)S_look(TotalTypeEnvi,temp->name.sym);
+        temp = temp->name.ty;
      }
      // 当是Ty_record Ty_int Ty_string Ty_array的时候返回
      return temp;
 }
-void expandTypeEnvi(S_symbol s1,A_ty ty)
+// A_namety
+void expandTypeEnvi(A_namety t1)
 {
+    S_symbol s1;
+    A_ty ty;
+    s1 = t1->name;
+    ty = t1->ty;
+    // 声明的类型已经存在
+    if(S_look(TotalTypeEnvi,s1))
+    {
+        yyerror("type declaartion with exsiting types! %s\n",s1);
+        return;
+    }
     if(!s1 || !ty)
     {
         yyerror("error happen when expanding type environment,null pointer!\n");
         return;
     }
+    bool flag = true;
     switch(ty->kind)
     {
         case 0:
             // A_nameTy, we just find it int the environment
             S_symbol s2 = ty->u.name;
             // 返回值
-            Ty_ty temp = FindBasisType(s2);
+            Ty_ty temp = (Ty_ty)S_look(TotalTypeEnvi,s2);
+            if(temp == NULL) 
+            {
+                addItem(t1);
+                return;
+            }
             // 不是基本类型，应该递归到基本类型，int string 或者array of type id，或者record类型
             S_enter(TotalTypeEnvi,s1,Ty_Name(s1,temp));
             break;
         case 1:
             // A_recordTy,
+            bool selfRecursive = false;
             A_fieldList tmpList = s2->u.record;
+            Ty_fieldList typeList =  NULL;
             if(tmpList == NULL) // 空的域
             {
-                S_enter(TotalTypeEnvi,s1,Ty_Record(NULL)); 
+                S_enter(TotalTypeEnvi,s1,Ty_Name(s1,Ty_Record(NULL)); 
             }
             else{
-                // 域非空，需要每一个类型都递归到基类型
+                // 域非空，需要每一个类型都说明，但是不递归到基本类型
                 // type a = {a1: type1, a2: type2, a3:type3, a4: a};
-                // 需要注意的是首先域内各个名字不能一样，其次
+                // 需要注意的是首先域内各个名字不能一样，其次,k可能出现循环递归
+                // 对于普通的域，应该采用作用域+.+name 加入绑定表里面,免得覆盖之前加入的类型如 type a1:int
+                // 对于递归类型的呢
+                A_field head = tmpList->head;
+                S_symbol symIDname, symTypeName;
+                S_symbol FullSym = NULL;
+                S_beginScope(TotalTypeEnvi);
+                while(head != NULL)
+                {
+                    symIDname = head->name;
+                    symTypeName = head->typ;
+                    string str = (string)checked_malloc(sizeof(char)*(strlen(s1->name)+strlen(symIDname->name)+2));
+                    // 一般来说内存能够申请到
+                    strcpy(str,s1->name);
+                    strcat(str,".");
+                    // copy
+                    strcat(str,symIDname->name);
+                    FullSym = S_Symbol(str);
+                    Ty_ty tmpField = S_look(TotalTypeEnvi,FullSym); // 查找存在与否
+                    if(!tmpField) // 域名内变量冲突
+                    {
+                        yyerror("type confict witth existing type in record field at position %d\n",head->pos);
+                        // 这一行不分析了，返回
+                        S_endScope(TotalTypeEnvi);
+                        return;
+                    }
+                    // 自我递归定义
+                    if(symTypeName == s1)
+                    {
+                        selfRecursive = true;
+                    }
+                    // 变量未加入，考察右边的类型是否存在
+                    Ty_ty tmpty1 = (Ty_ty)S_look(TotalTypeEnvi,symTypeName);
+                    if(tmpty1 == NULL && symTypeName != s1) // 变量类型尚且不存在
+                    {
+                        addItem(t1);
+                        flag = false;
+                        S_endScope(TotalTypeEnvi);
+                        return; // 依赖于其他未知变量，加入队列，先不管
+                    }
+                    else{
+                        // 标记一下
+                        S_enter(TotalTypeEnvi,FullSym,Ty_Name(FullSym,NULL)); // 解决域名内冲突
+                        Ty_field f1 = Ty_Field(symIDname,tmpty1);
+                        typeList = Ty_FieldList(f1,typeList);
+                    } 
+                    head = head->tail; 
+                }
+                S_endScope(TotalTypeEnvi);
+                // 域内所有类型都找到了
+                if(flag)
+                {
+                    //名字+对应链表结构
+                    Ty_Name temp2 = Ty_Name(s1,Ty_Record(typeList);
+                    S_enter(TotalTypeEnvi,s1,temp2);
+                    if(selfRecursive)
+                    {// 出现了自我递归定义
+                        Ty_field nodeField;
+                        while(typeList!=NULL){
+                            nodeField = typeList->head;
+                            if(nodeField->ty == NULL)
+                            {
+                                nodeField->ty = temp2;
+                            }
+                            typeList = typeList->tail;
+                        }
+                    }
+                }
             }
         case 2:
-              // array of Type id, 递归到int或者string为止
+              // array of Type id, 定义的时候不递归，比较到时候递归比较
               S_symbol s2 = ty->u.array;
               // 追溯到这是一个int或者
-              Ty_ty temp = FindBasisType(s2); 
+              Ty_ty temp = (Ty_ty)S_look(TotalTypeEnvi,s2);
+             if(temp == NULL) 
+             {
+                addItem(t1);
+                return;
+             }
             // 找到最初的类型变量，ru type c = {}, type d = c,  type e = array of d,
             // 那么符号表绑定 s1, Ty_ty{d}              
-            S_enter(TotalTypeEnvi,s1,Ty_Array(temp));
+            S_enter(TotalTypeEnvi,s1,Ty_Name(s1,Ty_Array(temp));
         default:
         /*not any one of the three kinds before, error happens*/
         yyerror("error happen when expanding type environment, type kind unexpected %d\n",ty->kind);
-        break;
+        return; 
+    }
+    removeOneItem(t1); // 尝试从未解决变量队列中删除
+    NullTypeList w1 = WaitTypeList;
+    NullTypeList w2 = WaitTypeList;
+    while(w1 =NULL) // 每一次成功的声明都试图解决可能存在递归声明的类型链表
+    {
+        w1 = WaitTypeList->next;
+        expandTypeEnvi(w2);
+        w2 = w1;
     }
     return;
 }
@@ -199,19 +361,26 @@ dec     : tydecs                        {$$ = A_TypeDec(EM_tokPos, $1);}
         ;
 
 tydec   : TYPE ID EQ ty                 {
-                                        S_symbol temp = S_Symbol($2);
+                                        S_symbol tempSym = S_Symbol($2);
                                         // Ty可能是一个类型ID，或者一个tyfields 或者 array of 
                                         A_Namety temp = A_Namety(S_Symbol($2), $4);
                                         $$ = temp;
                                         /*扩充类型表，应该是递归的扩充*/
                                         A_ty ty = temp->ty;
                                         /*根据节点的类型来扩建*/
-                                        expandTypeEnvi(temp,ty);
+                                        expandTypeEnvi(temp);
                                         }    
         ;
 
 tydecs  : tydec                         {$$ = A_NametyList($1, NULL);}
-        | tydec tydecs                  {$$ = A_NametyList($1, $2);}
+        | tydec tydecs                  {
+                                            $$ = A_NametyList($1, $2);
+                                            // 一连串声明结束之后，检查是不是还有类型未知的，如果是则出错
+                                            if(WaitTypeList !=  NULL)
+                                            { // 还有未知类型变量，报错
+                                                yyerror("type declaartion error, exsiting loop recursive declaartion%d\n");
+                                            }
+                                        }
         ;
 
 ty      : ID                            { 
@@ -227,7 +396,7 @@ tyfields: tyfield                       {$$ = $1;}
         ;
 
 tyfield : ID COLON ID                   {$$ = A_FieldList(A_Field(EM_tokPos, S_Symbol($1), S_Symbol($3)), NULL);}
-        | tyfield COMMA ID COLON ID     {$$ = A_FieldList(A_Field(EM_tokPos, S_Symbol($1), S_Symbol($3)), $5);}
+        | ID COLON ID COMMA tyfield     {$$ = A_FieldList(A_Field(EM_tokPos, S_Symbol($1), S_Symbol($3)), $5);}
         ;
 
 vardec  : VAR ID ASSIGN exp             {$$ = A_VarDec(EM_tokPos, S_Symbol($2), NULL, $4);}
@@ -291,14 +460,14 @@ exp : lvalue                            {$$ = A_VarExp(EM_tokPos, $1);}
     | BREAK                             {$$ = A_BreakExp(EM_tokPos);}
 
     | LET decs IN END                   {
-                                            S_beginScope(TotalEnvi);
+                                            S_beginScope(TotalTypeEnvi);
                                             $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, NULL));
-                                            S_endScope(TotalEnvi);
+                                            S_endScope(TotalTypeEnvi);
                                         }
     | LET decs IN expseq END            {  
-                                            S_beginScope(TotalEnvi);
+                                            S_beginScope(TotalTypeEnvi);
                                             $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, $4));
-                                            S_endScope(TotalEnvi);
+                                            S_endScope(TotalTypeEnvi);
                                         }
     ;
 
