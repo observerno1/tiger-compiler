@@ -41,7 +41,6 @@ void EM_error(int pos, char *message,...)
  IntList lines = linePos; 
  int num=lineNum;
  
-
   anyErrors=TRUE;
   while (lines && lines->i >= pos) 
        {lines=lines->rest; num--;}
