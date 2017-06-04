@@ -12,6 +12,8 @@ struct F_frame_
 	F_accessList formals;
 	int Local_varCount;
 }
+// 得到一个变量的具体访问地址
+// 那么
 struct F_access_{
 	enum {inFrame,inReg} kind;
 	union{
@@ -111,12 +113,12 @@ static F_accessList makeFormalAccessList(U_boolList formals) {
 	}
 	return head;
 }
-
+// 描述字符串的片段，由所在层的label和本身组成，前者实际上是一个symbol指针
 F_frag F_StringFrag(Temp_label label, string str) {
 	F_frag strfrag = checked_malloc(sizeof(*strfrag));
-	strfrag->kind = F_stringFrag;
-	strfrag->u.stringg.label = label;
-	strfrag->u.stringg.str = str;
+	strfrag->kind = F_stringFrag;  // 类型
+	strfrag->u.stringg.label = label; 
+	strfrag->u.stringg.str = str; // char 指针
 	return strfrag;
 }
 
@@ -134,16 +136,15 @@ F_fragList F_FragList(F_frag head, F_fragList tail) {
 	fl->tail = tail;
 	return fl;
 }
-
+// 帧指针寄存器，那么调用函数的时候需要保存之
 static Temp_temp fp = NULL;
 Temp_temp F_FP(void) { /* frame-pointer */
 	if (!fp) {
 		fp = Temp_newtemp();
-		//???F_add_to_map("ebp", fp);
 	}
 	return fp;
 }
-// 转化为树结构
+// 转化为树结构，
 T_exp F_Exp(F_access access, T_exp framePtr){ 
 	if (access->kind == inFrame) {
 		T_exp e = T_Mem(T_Binop(T_plus, framePtr, T_Const(access->u.offs)));
