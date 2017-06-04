@@ -12,6 +12,7 @@ void yyerror(char *s)
     EM_error(EM_tokPos, "%s", s);
 }
 A_exp absyn_root;
+bool Is 
 /*y以下分别为值环境表和类型环境表*/
 S_table TotalValEnvi = NULL;
 S_table TotalTypeEnvi = NULL;
@@ -362,7 +363,7 @@ dec     : tydecs                        {$$ = A_TypeDec(EM_tokPos, $1);}
 tydec   : TYPE ID EQ ty                 {
                                         S_symbol tempSym = S_Symbol($2);
                                         // Ty可能是一个类型ID，或者一个tyfields 或者 array of 
-                                        A_namety temp = A_Namety(S_Symbol($2), $4);
+                                        A_Namety temp = A_Namety(S_Symbol($2), $4);
                                         $$ = temp;
                                         /*扩充类型表，应该是递归的扩充*/
                                         A_ty ty = temp->ty;
@@ -459,14 +460,13 @@ exp : lvalue                            {$$ = A_VarExp(EM_tokPos, $1);}
     | BREAK                             {$$ = A_BreakExp(EM_tokPos);}
 
     | LET decs IN END                   {
-                                            S_beginScope(TotalTypeEnvi);
+                                           // S_beginScope(TotalTypeEnvi);
                                             $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, NULL));
                                             S_endScope(TotalTypeEnvi);
                                         }
     | LET decs IN expseq END            {  
-                                            S_beginScope(TotalTypeEnvi);
-                                            $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, $4));
-                                            S_endScope(TotalTypeEnvi);
+                                          //  S_beginScope(TotalTypeEnvi);
+                                            $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, $4);
                                         }
     ;
 

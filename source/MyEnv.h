@@ -7,14 +7,18 @@ struct E_enventy_
 {
 	enum {E_VarEntry, E_FunEntry} kind;
 	union{
-		struct { Ty_ty ty} var;
-		struct { Ty_TyList formals, Ty_ty result} func;
+		struct { Tr_access access, Ty_ty ty} var;
+		struct { 
+			Tr_level level,
+			Temp_label label;
+			Ty_TyList formals,
+			Ty_ty result} func;
 	}u;
 };
 /*cnnstruction function for a var entry which used to fill in value environment*/
-E_enventy E_VarEntry(Ty_ty ty); 
+E_enventy E_VarEntry(Tr_access access, Ty_ty ty)); 
 // 函数变量的值
-E_enventy E_FunEntry(Ty_TyList formals, Ty_ty result);
+E_enventy E_FunEntry(r_level level, Temp_label label, Ty_tyList formals, Ty_ty result);
 
 // 类型环境
 S_table E_base_tenv(void);

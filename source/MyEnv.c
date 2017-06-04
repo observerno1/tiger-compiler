@@ -8,18 +8,21 @@ Author: Qzh
 #include "util.h"
 #include "MyEnv.h"
 
-E_enventy E_VarEntry(Ty_ty ty)
+E_enventy E_VarEntry(Tr_access access, Ty_ty ty)
 {
 	E_enventy entry1 = (E_enventy)check_malloc(sizeof(*entry1));
-	entry1->kind = E_VarEntry;
+	entry1->kind = E_varEntry;
 	entry1->u.var.ty = ty;
+	entry1->u.var.access = access;
 	return entry1;
 }
 
-E_enventy E_FunEntry(Ty_TyList formals, Ty_ty result)
+E_enventy E_FunEntry(Tr_level level, Temp_label label, Ty_tyList formals, Ty_ty result)
 {
 	E_enventy entry1 = (E_enventy)check_malloc(sizeof(*entry1));
-	entry1->kind = E_FunEntry;
+	entry1->kind = E_funEntry;
+	entry1->u.func.level = level;
+	entry1->u.func.label = label;
 	entry1->u.func.formals = formals;
 	entry1->u.func.result = result;
 	return entry1;
