@@ -92,8 +92,9 @@ void SEM_transProg(A_exp exp)
 {
 	S_table tEnv = E_base_tenv();
 	S_table vEnv = E_base_eenv();
-	struct expty result = transExp(exp);
-	return;
+	struct expty result = transExp(tEnv,vEnv,Tr_outermost(),NULL,exp);
+	Tr_procEntryExit(Tr_outermost(),exp,NULL);
+	return Tr_getResult();
 }
 Ty_ty transTy(S_table tenv, A_ty ty)
 {
@@ -469,8 +470,14 @@ struct expty transExp(S_table venv, S_table tenv,Tr_level level,Temp_label lbrea
 						EM_error(a->pos,"parameter type mismatch");
 					}
 					// 无论如何还是把参数放到节点上去
-					callParam = Tr_ExpList(tmp,callParam);
-					// 因此这里函数参数链表应该是倒挂的
+					if(!callParam)
+						callParam = Tr_ExpList(tmp.exp,callParam);
+					else
+					{  
+
+						Tr_ExpList_append(callParam,tmp.exp);
+					}
+					// 这里参数链表是顺序的
 				}
 				if(fomals)
 				{
