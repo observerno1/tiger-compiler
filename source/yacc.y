@@ -338,15 +338,15 @@ void expandTypeEnvi(A_namety t1)
 %%
 
 program : exp                           {
-                                         TotalTypeEnvi = S_empty(); /*nitialize an empty table*/
-                                         TotalValEnvi = S_empty(); 
-                                         /*we first construct the basic map from int to Ty_int and string to Ty_string*/
-                                         Ty_ty intType= Ty_int();
-                                         Ty_ty stringType = Ty_String();
-                                         S_symbol s1 = S_Symbol("int");
-                                         S_symbol s2 = S_Symbol("string");
-                                         S_enter(TotalTypeEnvi,s1,intType);
-                                         S_enter(TotalTypeEnvi,s2,stringType);
+                                         // TotalTypeEnvi = S_empty(); /*nitialize an empty table*/
+                                         // TotalValEnvi = S_empty(); 
+                                         // /*we first construct the basic map from int to Ty_int and string to Ty_string*/
+                                         // Ty_ty intType= Ty_int();
+                                         // Ty_ty stringType = Ty_String();
+                                         // S_symbol s1 = S_Symbol("int");
+                                         // S_symbol s2 = S_Symbol("string");
+                                         // S_enter(TotalTypeEnvi,s1,intType);
+                                         // S_enter(TotalTypeEnvi,s2,stringType);
                                          absyn_root = $1;
                                         }
         ;
@@ -366,21 +366,14 @@ tydec   : TYPE ID EQ ty                 {
                                         A_Namety temp = A_Namety(S_Symbol($2), $4);
                                         $$ = temp;
                                         /*扩充类型表，应该是递归的扩充*/
-                                        A_ty ty = temp->ty;
+                                 //       A_ty ty = temp->ty;
                                         /*根据节点的类型来扩建*/
-                                        expandTypeEnvi(temp);
+                                  //      expandTypeEnvi(temp);
                                         }    
         ;
 
 tydecs  : tydec                         {$$ = A_NametyList($1, NULL);}
-        | tydec tydecs                  {
-                                            $$ = A_NametyList($1, $2);
-                                            // 一连串声明结束之后，检查是不是还有类型未知的，如果是则出错
-                                            if(WaitTypeList !=  NULL)
-                                            { // 还有未知类型变量，报错
-                                                yyerror("type declaartion error, exsiting loop recursive declaartion%d\n");
-                                            }
-                                        }
+        | tydec tydecs                  { $$ = A_NametyList($1, $2);}
         ;
 
 ty      : ID                            { 
@@ -462,7 +455,6 @@ exp : lvalue                            {$$ = A_VarExp(EM_tokPos, $1);}
     | LET decs IN END                   {
                                            // S_beginScope(TotalTypeEnvi);
                                             $$ = A_LetExp(EM_tokPos, $2, A_SeqExp(EM_tokPos, NULL));
-                                            S_endScope(TotalTypeEnvi);
                                         }
     | LET decs IN expseq END            {  
                                           //  S_beginScope(TotalTypeEnvi);
