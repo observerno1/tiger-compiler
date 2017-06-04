@@ -34,9 +34,10 @@ Tr_accessList Tr_formals(Tr_level level);
 Tr_access Tr_allocLocal(Tr_level level, bool escape);
 
 void doPatch(patchList, Temp_label);
+
 // 在表达式链表前后加入
 void Tr_ExpList_append(Tr_expList list, Tr_exp expr);
-
+patchList joinPatch(patchList first, patchList second);
 Tr_exp Tr_seqExp(Tr_expList list);
 Tr_exp Tr_simpleVar(Tr_access, Tr_level);
 Tr_exp Tr_fieldVar(Tr_exp record, int index);
