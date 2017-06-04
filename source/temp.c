@@ -35,7 +35,8 @@ Temp_label Temp_namedlabel(string s)
 }
 
 static int temps = 100; 
-// 临时变量的数目？
+// 预留寄存器的数目
+// 生成一个临时的寄存器
 Temp_temp Temp_newtemp(void)
 {
   Temp_temp p = (Temp_temp) checked_malloc(sizeof (*p));

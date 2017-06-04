@@ -50,6 +50,7 @@ F_fragList F_FragList(F_frag, F_fragList);
 Temp_temp F_FP();
 // translate 调用此函数，将F_access 转换为tree表达式，第二个是栈桢所在地址
 T_exp F_Exp(F_access, T_exp);
+// 调用库函数
 T_exp F_externalCall(string, T_expList);
 T_stm F_procEntryExit1(F_frame, T_stm);
 Temp_temp F_RV();

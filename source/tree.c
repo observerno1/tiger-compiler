@@ -30,7 +30,7 @@ T_stm T_Label(Temp_label label)
  p->u.LABEL=label;
  return p;
 }
- 
+// jump语句，exp可以是计算出来的地址，也可以是
 T_stm T_Jump(T_exp exp, Temp_labelList labels)
 {T_stm p = (T_stm) checked_malloc(sizeof *p);
  p->kind=T_JUMP;

@@ -68,7 +68,7 @@ struct Tr_level_{
     Tr_level parent;  // 上一级层次
     Temp_label name;  // 这一层名字
     F_frame frame;   // 所在的栈桢
-    Tr_accessList formals; //暂时不知道这个参数用来干嘛
+    Tr_accessList formals; //保存参数的情况，包括了静态连在第一个位置
 }
 // 处理一个位于lev层的变量的时候，返回该结果，包括了所在静态连信息，还有在桢内的信息
 struct Tr_access_
@@ -116,6 +116,7 @@ Tr_accessList Tr_AccessList(Tr_access head, Tr_accessList tail)
     tmp->tail = tail;
     // 
 }
+// 一连串的表达式
 Tr_expList Tr_ExpList(Tr_exp head, Tr_expList tail)
 {   
     Tr_expList temp = checked_malloc(sizeof(*temp));
@@ -176,6 +177,7 @@ Tr_access Tr_allocLocal(Tr_level level, bool escape)
 {
   assert(level);
   F_frame frame = level->frame;
+  // 从当前桢地址开始计算，在桢中预留空间保存变量
   F_access f_access = F_allocLocal(frame,escape);
   Tr_access tr_access = checked_malloc(sizeof(*tr_access));
   tr_access->access = f_access;
@@ -254,8 +256,8 @@ static struct Cx unCx(Tr_exp e)
         case Tr_ex:
         {
             struct Cx cx;
-            /* If comparison yields true then the expression was false (compares equal
-             * to zero) so we jump to false label. */
+            // 转化为跟0比较，如果是fals，这里将false放在紧跟随的地方
+            // 相等，证明原条件不成立，label设置为null
             cx.stm = T_Cjump(T_eq, e->u.ex, T_Const(0), NULL, NULL);
             cx.trues = PatchList(&(cx.stm->u.CJUMP.false), NULL);
             cx.falses = PatchList(&(cx.stm->u.CJUMP.true), NULL);
@@ -292,29 +294,32 @@ patchList joinPatch(patchList first, patchList second) {
 Tr_exp Tr_simpleVar(Tr_access access, Tr_level level)
 {
     T_exp fp = T_Temp(F_FP()); // 后者返回一个含有新的临时寄存器的表达式子
-    while (level != access->level) {
+    
+    while (level && level != access->level) {
         /* Static link is the first frame formal */
         F_access staticLink = level->frame->formals->head; //第一个应该存放着静态连
         fp = F_Exp(staticLink, fp);
         level = level->parent;
     }
     // 变量不在自己的层内使用的时候，追踪静态链
-    T_exp var = F_Exp(acc->access, fp);     // 转化为 Mem(binop,temp fp,const k)的结构
-    return Tr_Ex(var);
+    T_exp var = F_Exp(access->access, fp);     // 转化为 Mem(binop,temp fp,const k)的结构
+    return Tr_Ex(var);   //有返回值的表达式
 }
 // 记录变量
+// 对于第一个抽取出来的是记录变量的基地址，加上偏移量即可
 Tr_exp Tr_fieldVar(Tr_exp record, int index)
 {
- return Tr_Ex(T_Mem(T_Binop(T_plus, unEx(record), T_Const(fieldOffset * wordSize))));
+ return Tr_Ex(T_Mem(T_Binop(T_plus, unEx(record), T_Const(index * wordSize))));
 }
 
 // 数组变量
+// 数组基地址 + index * stepSize
 Tr_exp Tr_subscriptVar(Tr_exp arrayBase, Tr_exp index)
 {
     return Tr_Ex(T_Mem(T_Binop(T_plus, unEx(arrayBase), 
-                T_Binop(T_mul, unEx(index), T_Const(F_WORD_SIZE)))));
+                T_Binop(T_mul, unEx(index), T_Const(wordSize)))));
 }
-
+// 空记录表达式
 Tr_exp Tr_nilExp() {
     return Tr_Ex(T_Const(0));
 }
@@ -323,35 +328,41 @@ Tr_exp Tr_voidExp(){
     return Tr_Nx(T_Exp(T_Const(0)));
 }
 
+
 Tr_exp Tr_intExp(int val) {
     return Tr_Ex(T_Const(val));
 }
 // 字符串表达式
 Tr_exp Tr_stringExp(string str, Tr_level level) {
-    // alloc a new label
+
     Temp_label lab = F_name(level->frame);
     // build a chain
     // 字符串常量类似于静态变量
+    // 取出字符串所在的函数层标志
+    // 串接片段
     gFrags = F_FragList(F_StringFrag(lab,str),gFrags);
     
     // return a NAME not a label
     return Tr_Ex(T_Name(lab));
 }
-//参数分别为标记，调用层，定义层，参数列表
+//参数分别为 标记，调用层，定义层，参数列表
+//函数调用需要将隐含的静态链信息传递过去
 Tr_exp Tr_callExp(Temp_label fun, Tr_level called, Tr_level defined, Tr_expList args) 
 {
-    T_expList paralist; // 参数链表
+    T_expList paralist = NULL; // 参数链表
     T_expList tmp;
+
     while(args) {
-        exps = T_ExpList(unEx(args->head),NULL);
-        if(list == NULL) {
-            list = exps;
+        tmp = T_ExpList(unEx(args->head),NULL);   // 修改tail指针
+        if(paralist == NULL) {
+            list = exps;  // 保存首指针
         } else {
-            exps = exps->tail;
+            tmp = tmp->tail;
         }
         args = args->tail;        
     }
     // 记录参数
+    // 第一个是静态链的信息
     list = T_expList(unEx(staticLink(defined,called)),list);
     return Tr_Ex(T_Call(T_Name(fun),list));
 }
@@ -359,42 +370,46 @@ Tr_exp Tr_callExp(Temp_label fun, Tr_level called, Tr_level defined, Tr_expList 
 // 二元操作表达式
 Tr_exp Tr_opExp(A_oper op, Tr_exp left, Tr_exp right) 
 {
-    bool isbin = FALSE;
-    bool isrel = FALSE;
+    bool IsOp = false;
+    bool IsCompare = false;
 
+// 操作符定义在 absyn.h 中
     T_binOp binop;
     T_relOp relop;
-
     switch(op) {
-        case A_plusOp:   binop = T_plus; isbin = TRUE; break;
-        case A_minusOp:  binop = T_minus; isbin = TRUE; break;
-        case A_timesOp:  binop = T_mul; isbin = TRUE; break;
-        case A_divideOp: binop = T_div; isbin = TRUE; break;
-        case A_eqOp:     relop = T_eq; isrel = TRUE; break;
-        case A_neqOp:    relop = T_ne; isrel = TRUE; break;
-        case A_ltOp:     relop = T_lt; isrel = TRUE; break;
-        case A_leOp:     relop = T_le; isrel = TRUE; break;
-        case A_gtOp:     relop = T_gt; isrel = TRUE; break;
-        case A_geOp:     relop = T_ge; isrel = TRUE; break;
+        case A_plusOp:   IsOp = T_plus; isbin = TRUE; break;
+        case A_minusOp:  IsOp = T_minus; isbin = TRUE; break;
+        case A_timesOp:  IsOp = T_mul; isbin = TRUE; break;
+        case A_divideOp: IsOp = T_div; isbin = TRUE; break;
+        case A_eqOp:     IsOp = T_eq; isrel = TRUE; break;
+        case A_neqOp:    IsCompare = T_ne; isrel = TRUE; break;
+        case A_ltOp:     IsCompare = T_lt; isrel = TRUE; break;
+        case A_leOp:     IsCompare = T_le; isrel = TRUE; break;
+        case A_gtOp:     IsCompare = T_gt; isrel = TRUE; break;
+        case A_geOp:     IsCompare = T_ge; isrel = TRUE; break;
         default: break; 
     }
-    if(isbin) {
+    if(IsOp) {
+        //2元操作符
         return Tr_Ex(T_Binop(binop,unEx(left),unEx(right)));
-    } else if(isrel) {
-        // 关系表达式，true返回1？false返回0？
+    } 
+    else if(IsCompare) {
+        // 这里不用担心是返回值，如果需要的话，会在unEx中实现
         T_stm stm = T_Cjump(relop,unEx(left),unEx(right),NULL,NULL);    
         patchList trues = PatchList(&stm->u.CJUMP.true,NULL);     
         patchList falses = PatchList(&stm->u.CJUMP.false,NULL);       
         return Tr_Cx(trues,falses,stm);
-    }     
+    }
+    // 到这里证明出错了,不是上述几种操作符  
     assert(0);
 }
+// 没有else分子的if语句
 Tr_exp Tr_ifWithNoElse(Tr_exp cond, Tr_exp then)
 {
     Temp_label t = Temp_newlabel();
     Temp_label f = Temp_newlabel();
-    struct Cx condT = unCx(cond);
-    doPatch(condT.trues,t);
+    struct Cx condT = unCx(cond); // 
+    doPatch(condT.trues,t); // 在树上填标志符
     doPatch(condT.falses,f); 
     if(then->kind == Tr_nx)
     { // 没有返回值的表达式
@@ -414,10 +429,12 @@ Tr_exp Tr_ifWithElse(Tr_exp cond, Tr_exp then, Tr_exp elseexp)
     Temp_label t = Temp_newlabel(), f = Temp_newlabel(), join = Temp_newlabel();
     Temp_temp r = Temp_newtemp();
     Tr_exp result = NULL;
+    // 两个分支的的汇集点。
     T_stm joinJump = T_Jump(T_Name(join), Temp_LabelList(join, NULL));
     struct Cx cond = unCx(test);
     doPatch(cond.trues, t);
     doPatch(cond.falses, f);
+    // else 和 then具有相同的类型，一个jump类型
     if (elsee->kind == Tr_ex) {
         result = Tr_Ex(T_Eseq(cond.stm, T_Eseq(T_Label(t), 
                     T_Eseq(T_Move(T_Temp(r), unEx(then)),
@@ -479,11 +496,12 @@ Tr_exp Tr_forExp(Tr_exp lo, Tr_exp hi, Tr_exp body, Temp_label ldone) {
                                 T_Seq(bodystm,
                                     T_Seq(T_Jump(T_Name(ltest),Temp_LabelList(ltest,NULL)),T_Label(ldone))))))));
 }
-
+// 记录类型的变量的翻译需要翻译成一颗move构成的树状
+// 先调用外部函数分配记录参数需要的空间
 Tr_exp Tr_recordExp(int n, Tr_expList fields)
 {
     T_expList args = T_ExpList(T_Binop(T_mul,T_Const(n),T_Const(wordSize)),NULL);
-    // TODO: how to call malloc? malloc: run-time library 
+  
     T_exp call = F_externalCall("malloc",args);
 
     Temp_temp r = Temp_newtemp();
@@ -500,7 +518,7 @@ Tr_exp Tr_recordExp(int n, Tr_expList fields)
         seq->u.SEQ.right = temp;
         seq = seq->u.SEQ.right;
     }
-
+// 返回一个记录的地址
     return Tr_Ex(T_Eseq(head,T_Temp(r)));
 }
 
@@ -509,16 +527,18 @@ Tr_exp Tr_assignExp(Tr_exp var, Tr_exp val) {
 }
 
 // same with record, return r, the address
+// 
 Tr_exp Tr_arrayExp(Tr_exp size, Tr_exp init) {
     // first : malloc some memory
     T_expList args0 = T_ExpList(T_Binop(T_mul,unEx(size),T_Const(wordSize)),NULL);
     T_exp call0 = F_externalCall("malloc",args0);
     Temp_temp r= Temp_newtemp();
-
     // second : init array
     T_expList args1 = T_ExpList(T_Binop(T_mul,unEx(size),T_Const(wordSize)),
                     T_ExpList(unEx(init),NULL));
+    // 假设有初始化的函数
     T_exp call1 = F_externalCall("initArray",args1);
+    //r 寄存器中保存的应该是申请到的数组空间的起始地址
     T_stm seq = T_Seq(T_Move(T_Temp(r),call0),T_Exp(call1));
 
     return Tr_Ex(T_Eseq(seq,T_Temp(r)));
@@ -534,12 +554,9 @@ Tr_exp Tr_varDec(Tr_access acc, Tr_exp init) {
 
 Tr_exp Tr_funDec(Tr_level level, Tr_exp body) {
     T_stm sbody = unNx(body);
-
     //TODO: add Move body ot RV
-
     // build a chain
     gFrags = F_FragList(F_ProcFrag(sbody,level->frame),gFrags);
-
     return Tr_Ex(T_Const(0));
 }
 
