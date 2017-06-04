@@ -35,12 +35,15 @@ struct Tr_exp_ {
     }u;
 };
 //找到第二个静态连到第一个静态连的树表达式
+//这里桢指针更新应该是调用函数的时候更新桢指针寄存器，
+// 但新的一帧大小实际上是不知道的，假设后来有更新，这里字节取出桢指针寄存器的值
+// 当作当前运行栈的桢指针
 static Tr_exp Tr_StaticLink(Tr_level funLevel, Tr_level level)
 {
-    T_exp addr = T_Temp(F_FP());
+    T_exp addr = T_Temp(F_FP()); // 取寄存器的树表达式
     /* Follow static links until we reach level of defintion */
     while (level != funLevel->parent) {
-        /* Static link is the first frame formal */
+        // 取出指针
         F_access staticLink = level->frame->formals->head;
         addr = F_Exp(staticLink, addr);
         level = level->parent;
